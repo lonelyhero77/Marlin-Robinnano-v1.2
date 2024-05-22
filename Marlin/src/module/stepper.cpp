@@ -58,10 +58,16 @@
  *
  *                           time ----->
  *
- *  The trapezoid is the shape the speed curve over time. It starts at block->initial_rate, accelerates
- *  first block->accelerate_until step_events_completed, then keeps going at constant speed until
- *  step_events_completed reaches block->decelerate_after after which it decelerates until the trapezoid generator is reset.
- *  The slope of acceleration is calculated using v = u + at where t is the accumulated timer values of the steps so far.
+ *  The speed over time graph forms a TRAPEZOID. The slope of acceleration is calculated by
+ *    v = u + t
+ *  where 't' is the accumulated timer values of the steps so far.
+ *
+ *  The Stepper ISR dynamically executes acceleration, deceleration, and cruising according to the block parameters.
+ *    - Start at block->initial_rate.
+ *    - Accelerate while step_events_completed < block->accelerate_before.
+ *    - Cruise while step_events_completed < block->decelerate_start.
+ *    - Decelerate after that, until all steps are completed.
+ *    - Reset the trapezoid generator.
  */
 
 /**
@@ -193,6 +199,7 @@ bool Stepper::abort_current_block;
   ;
 #endif
 
+// In timer_ticks
 uint32_t Stepper::acceleration_time, Stepper::deceleration_time;
 
 #if MULTISTEPPING_LIMIT > 1
@@ -224,8 +231,8 @@ xyze_long_t Stepper::delta_error{0};
 xyze_long_t Stepper::advance_dividend{0};
 uint32_t Stepper::advance_divisor = 0,
          Stepper::step_events_completed = 0, // The number of step events executed in the current block
-         Stepper::accelerate_until,          // The count at which to stop accelerating
-         Stepper::decelerate_after,          // The count at which to start decelerating
+         Stepper::accelerate_before,         // The count at which to start cruising
+         Stepper::decelerate_start,          // The count at which to start decelerating
          Stepper::step_event_count;          // The total event count for the current block
 
 #if ANY(HAS_MULTI_EXTRUDER, MIXING_EXTRUDER)
@@ -274,20 +281,16 @@ uint32_t Stepper::advance_divisor = 0,
   shaping_echo_axis_t ShapingQueue::echo_axes[shaping_echoes];
   uint16_t            ShapingQueue::tail = 0;
 
-  #if ENABLED(INPUT_SHAPING_X)
-    shaping_time_t  ShapingQueue::delay_x;
-    shaping_time_t  ShapingQueue::peek_x_val = shaping_time_t(-1);
-    uint16_t        ShapingQueue::head_x = 0;
-    uint16_t        ShapingQueue::_free_count_x = shaping_echoes - 1;
-    ShapeParams     Stepper::shaping_x;
-  #endif
-  #if ENABLED(INPUT_SHAPING_Y)
-    shaping_time_t  ShapingQueue::delay_y;
-    shaping_time_t  ShapingQueue::peek_y_val = shaping_time_t(-1);
-    uint16_t        ShapingQueue::head_y = 0;
-    uint16_t        ShapingQueue::_free_count_y = shaping_echoes - 1;
-    ShapeParams     Stepper::shaping_y;
-  #endif
+  #define SHAPING_VAR_DEFS(AXIS)                                           \
+    shaping_time_t  ShapingQueue::delay_##AXIS;                            \
+    shaping_time_t  ShapingQueue::_peek_##AXIS = shaping_time_t(-1);       \
+    uint16_t        ShapingQueue::head_##AXIS = 0;                         \
+    uint16_t        ShapingQueue::_free_count_##AXIS = shaping_echoes - 1; \
+    ShapeParams     Stepper::shaping_##AXIS;
+
+  TERN_(INPUT_SHAPING_X, SHAPING_VAR_DEFS(x))
+  TERN_(INPUT_SHAPING_Y, SHAPING_VAR_DEFS(y))
+  TERN_(INPUT_SHAPING_Z, SHAPING_VAR_DEFS(z))
 #endif
 
 #if ENABLED(BABYSTEPPING)
@@ -1603,6 +1606,7 @@ void Stepper::isr() {
       interval = _MIN(nextMainISR, uint32_t(HAL_TIMER_TYPE_MAX));         // Time until the next Pulse / Block phase
       TERN_(INPUT_SHAPING_X, NOMORE(interval, ShapingQueue::peek_x()));   // Time until next input shaping echo for X
       TERN_(INPUT_SHAPING_Y, NOMORE(interval, ShapingQueue::peek_y()));   // Time until next input shaping echo for Y
+      TERN_(INPUT_SHAPING_Z, NOMORE(interval, ShapingQueue::peek_z()));   // Time until next input shaping echo for Z
       TERN_(LIN_ADVANCE, NOMORE(interval, nextAdvanceISR));               // Come back early for Linear Advance?
       TERN_(BABYSTEPPING, NOMORE(interval, nextBabystepISR));             // Come back early for Babystepping?
 
@@ -1747,6 +1751,10 @@ void Stepper::pulse_phase_isr() {
           shaping_y.delta_error = 0;
           shaping_y.last_block_end_pos = count_position.y;
         #endif
+        #if ENABLED(INPUT_SHAPING_Z)
+          shaping_z.delta_error = 0;
+          shaping_z.last_block_end_pos = count_position.z;
+        #endif
       #endif
     }
   }
@@ -1805,6 +1813,12 @@ void Stepper::pulse_phase_isr() {
       #define HYSTERESIS_Y 64
     #else
       #define HYSTERESIS_Y 0
+    #endif
+    #if AXIS_DRIVER_TYPE_Z(TMC2208) || AXIS_DRIVER_TYPE_Z(TMC2208_STANDALONE) || \
+        AXIS_DRIVER_TYPE_Z(TMC5160) || AXIS_DRIVER_TYPE_Z(TMC5160_STANDALONE)
+      #define HYSTERESIS_Z 64
+    #else
+      #define HYSTERESIS_Z 0
     #endif
     #define _HYSTERESIS(AXIS) HYSTERESIS_##AXIS
     #define HYSTERESIS(AXIS) _HYSTERESIS(AXIS)
@@ -1998,9 +2012,10 @@ void Stepper::pulse_phase_isr() {
       #if HAS_ZV_SHAPING
         // record an echo if a step is needed in the primary bresenham
         const bool x_step = TERN0(INPUT_SHAPING_X, step_needed.x && shaping_x.enabled),
-                   y_step = TERN0(INPUT_SHAPING_Y, step_needed.y && shaping_y.enabled);
-        if (x_step || y_step)
-          ShapingQueue::enqueue(x_step, TERN0(INPUT_SHAPING_X, shaping_x.forward), y_step, TERN0(INPUT_SHAPING_Y, shaping_y.forward));
+                   y_step = TERN0(INPUT_SHAPING_Y, step_needed.y && shaping_y.enabled),
+                   z_step = TERN0(INPUT_SHAPING_Z, step_needed.z && shaping_z.enabled);
+        if (x_step || y_step || z_step)
+          ShapingQueue::enqueue(x_step, TERN0(INPUT_SHAPING_X, shaping_x.forward), y_step, TERN0(INPUT_SHAPING_Y, shaping_y.forward), z_step, TERN0(INPUT_SHAPING_Z, shaping_z.forward));
 
         // do the first part of the secondary bresenham
         #if ENABLED(INPUT_SHAPING_X)
@@ -2010,6 +2025,10 @@ void Stepper::pulse_phase_isr() {
         #if ENABLED(INPUT_SHAPING_Y)
           if (y_step)
             PULSE_PREP_SHAPING(Y, shaping_y.delta_error, shaping_y.forward ? shaping_y.factor1 : -shaping_y.factor1);
+        #endif
+        #if ENABLED(INPUT_SHAPING_Z)
+          if (z_step)
+            PULSE_PREP_SHAPING(Z, shaping_z.delta_error, shaping_z.forward ? shaping_z.factor1 : -shaping_z.factor1);
         #endif
       #endif
     }
@@ -2117,6 +2136,7 @@ void Stepper::pulse_phase_isr() {
     // Clear the echoes that are ready to process. If the buffers are too full and risk overflow, also apply echoes early.
     TERN_(INPUT_SHAPING_X, step_needed.x = !ShapingQueue::peek_x() || ShapingQueue::free_count_x() < steps_per_isr);
     TERN_(INPUT_SHAPING_Y, step_needed.y = !ShapingQueue::peek_y() || ShapingQueue::free_count_y() < steps_per_isr);
+    TERN_(INPUT_SHAPING_Z, step_needed.z = !ShapingQueue::peek_z() || ShapingQueue::free_count_z() < steps_per_isr);
 
     if (bool(step_needed)) while (true) {
       #if ENABLED(INPUT_SHAPING_X)
@@ -2135,6 +2155,14 @@ void Stepper::pulse_phase_isr() {
         }
       #endif
 
+      #if ENABLED(INPUT_SHAPING_Z)
+        if (step_needed.z) {
+          const bool forward = ShapingQueue::dequeue_z();
+          PULSE_PREP_SHAPING(Z, shaping_z.delta_error, (forward ? shaping_z.factor2 : -shaping_z.factor2));
+          PULSE_START(Z);
+        }
+      #endif
+
       TERN_(I2S_STEPPER_STREAM, i2s_push_sample());
 
       USING_TIMED_PULSE();
@@ -2149,10 +2177,14 @@ void Stepper::pulse_phase_isr() {
         #if ENABLED(INPUT_SHAPING_Y)
           PULSE_STOP(Y);
         #endif
+        #if ENABLED(INPUT_SHAPING_Z)
+          PULSE_STOP(Z);
+        #endif
       }
 
       TERN_(INPUT_SHAPING_X, step_needed.x = !ShapingQueue::peek_x() || ShapingQueue::free_count_x() < steps_per_isr);
       TERN_(INPUT_SHAPING_Y, step_needed.y = !ShapingQueue::peek_y() || ShapingQueue::free_count_y() < steps_per_isr);
+      TERN_(INPUT_SHAPING_Z, step_needed.z = !ShapingQueue::peek_z() || ShapingQueue::free_count_z() < steps_per_isr);
 
       if (!bool(step_needed)) break;
 
@@ -2403,7 +2435,7 @@ hal_timer_t Stepper::block_phase_isr() {
       // Step events not completed yet...
 
       // Are we in acceleration phase ?
-      if (step_events_completed <= accelerate_until) { // Calculate new timer value
+      if (step_events_completed < accelerate_before) { // Calculate new timer value
 
         #if ENABLED(S_CURVE_ACCELERATION)
           // Get the next speed to use (Jerk limited!)
@@ -2420,6 +2452,7 @@ hal_timer_t Stepper::block_phase_isr() {
         // step_rate to timer interval and steps per stepper isr
         interval = calc_multistep_timer_interval(acc_step_rate << oversampling_factor);
         acceleration_time += interval;
+        deceleration_time = 0; // Reset since we're doing acceleration first.
 
         #if ENABLED(NONLINEAR_EXTRUSION)
           calc_nonlinear_e(acc_step_rate << oversampling_factor);
@@ -2441,16 +2474,13 @@ hal_timer_t Stepper::block_phase_isr() {
          * Laser power variables are calulated and stored in this block by the planner code.
          *  trap_ramp_active_pwr - the active power in this block across accel or decel trap steps.
          *  trap_ramp_entry_incr - holds the precalculated value to increase the current power per accel step.
-         *
-         * Apply the starting active power and then increase power per step by the trap_ramp_entry_incr value if positive.
          */
-
         #if ENABLED(LASER_POWER_TRAP)
           if (cutter.cutter_mode == CUTTER_MODE_CONTINUOUS) {
             if (planner.laser_inline.status.isPowered && planner.laser_inline.status.isEnabled) {
               if (current_block->laser.trap_ramp_entry_incr > 0) {
                 cutter.apply_power(current_block->laser.trap_ramp_active_pwr);
-                current_block->laser.trap_ramp_active_pwr += current_block->laser.trap_ramp_entry_incr;
+                current_block->laser.trap_ramp_active_pwr += current_block->laser.trap_ramp_entry_incr * steps_per_isr;
               }
             }
             // Not a powered move.
@@ -2459,30 +2489,24 @@ hal_timer_t Stepper::block_phase_isr() {
         #endif
       }
       // Are we in Deceleration phase ?
-      else if (step_events_completed > decelerate_after) {
+      else if (step_events_completed >= decelerate_start) {
         uint32_t step_rate;
 
         #if ENABLED(S_CURVE_ACCELERATION)
-
           // If this is the 1st time we process the 2nd half of the trapezoid...
           if (!bezier_2nd_half) {
             // Initialize the Bézier speed curve
             _calc_bezier_curve_coeffs(current_block->cruise_rate, current_block->final_rate, current_block->deceleration_time_inverse);
             bezier_2nd_half = true;
-            // The first point starts at cruise rate. Just save evaluation of the Bézier curve
-            step_rate = current_block->cruise_rate;
           }
-          else {
-            // Calculate the next speed to use
-            step_rate = deceleration_time < current_block->deceleration_time
-              ? _eval_bezier_curve(deceleration_time)
-              : current_block->final_rate;
-          }
-
+          // Calculate the next speed to use
+          step_rate = deceleration_time < current_block->deceleration_time
+            ? _eval_bezier_curve(deceleration_time)
+            : current_block->final_rate;
         #else
           // Using the old trapezoidal control
           step_rate = STEP_MULTIPLY(deceleration_time, current_block->acceleration_rate);
-          if (step_rate < acc_step_rate) { // Still decelerating?
+          if (step_rate < acc_step_rate) {
             step_rate = acc_step_rate - step_rate;
             NOLESS(step_rate, current_block->final_rate);
           }
@@ -2524,15 +2548,12 @@ hal_timer_t Stepper::block_phase_isr() {
           }
         #endif // LIN_ADVANCE
 
-        /**
-         * Adjust Laser Power - Decelerating
-         * trap_ramp_entry_decr - holds the precalculated value to decrease the current power per decel step.
-         */
+        // Adjust Laser Power - Decelerating
         #if ENABLED(LASER_POWER_TRAP)
           if (cutter.cutter_mode == CUTTER_MODE_CONTINUOUS) {
             if (planner.laser_inline.status.isPowered && planner.laser_inline.status.isEnabled) {
               if (current_block->laser.trap_ramp_exit_decr > 0) {
-                current_block->laser.trap_ramp_active_pwr -= current_block->laser.trap_ramp_exit_decr;
+                current_block->laser.trap_ramp_active_pwr -= current_block->laser.trap_ramp_exit_decr * steps_per_isr;
                 cutter.apply_power(current_block->laser.trap_ramp_active_pwr);
               }
               // Not a powered move.
@@ -2548,6 +2569,9 @@ hal_timer_t Stepper::block_phase_isr() {
         if (ticks_nominal == 0) {
           // step_rate to timer interval and loops for the nominal speed
           ticks_nominal = calc_multistep_timer_interval(current_block->nominal_rate << oversampling_factor);
+          // Prepare for deceleration
+          IF_DISABLED(S_CURVE_ACCELERATION, acc_step_rate = current_block->nominal_rate);
+          deceleration_time = ticks_nominal / 2;
 
           #if ENABLED(NONLINEAR_EXTRUSION)
             calc_nonlinear_e(current_block->nominal_rate << oversampling_factor);
@@ -2557,30 +2581,25 @@ hal_timer_t Stepper::block_phase_isr() {
             if (la_active)
               la_interval = calc_timer_interval(current_block->nominal_rate >> current_block->la_scaling);
           #endif
+
+          // Adjust Laser Power - Cruise
+          #if ENABLED(LASER_POWER_TRAP)
+            if (cutter.cutter_mode == CUTTER_MODE_CONTINUOUS) {
+              if (planner.laser_inline.status.isPowered && planner.laser_inline.status.isEnabled) {
+                if (current_block->laser.trap_ramp_entry_incr > 0) {
+                  current_block->laser.trap_ramp_active_pwr = current_block->laser.power;
+                  cutter.apply_power(current_block->laser.power);
+                }
+              }
+              // Not a powered move.
+              else cutter.apply_power(0);
+            }
+          #endif
         }
 
         // The timer interval is just the nominal value for the nominal speed
         interval = ticks_nominal;
       }
-
-      /**
-       * Adjust Laser Power - Cruise
-       * power - direct or floor adjusted active laser power.
-       */
-      #if ENABLED(LASER_POWER_TRAP)
-        if (cutter.cutter_mode == CUTTER_MODE_CONTINUOUS) {
-          if (step_events_completed + 1 == accelerate_until) {
-            if (planner.laser_inline.status.isPowered && planner.laser_inline.status.isEnabled) {
-              if (current_block->laser.trap_ramp_entry_incr > 0) {
-                current_block->laser.trap_ramp_active_pwr = current_block->laser.power;
-                cutter.apply_power(current_block->laser.power);
-              }
-            }
-            // Not a powered move.
-            else cutter.apply_power(0);
-          }
-        }
-      #endif
     }
 
     #if ENABLED(LASER_FEATURE)
@@ -2675,13 +2694,10 @@ hal_timer_t Stepper::block_phase_isr() {
       // Set flags for all moving axes, accounting for kinematics
       set_axis_moved_for_current_block();
 
-      // No acceleration / deceleration time elapsed so far
-      acceleration_time = deceleration_time = 0;
-
       #if ENABLED(ADAPTIVE_STEP_SMOOTHING)
         // Nonlinear Extrusion needs at least 2x oversampling to permit increase of E step rate
         // Otherwise assume no axis smoothing (via oversampling)
-        oversampling_factor = TERN(NONLINEAR_EXTRUSION, 1, 0);
+        oversampling_factor = TERN0(NONLINEAR_EXTRUSION, 1);
 
         // Decide if axis smoothing is possible
         if (stepper.adaptive_step_smoothing_enabled) {
@@ -2717,7 +2733,7 @@ hal_timer_t Stepper::block_phase_isr() {
         }
       #endif
 
-      // Y follows the same logic as X (but the comments aren't repeated)
+      // Y and Z follow the same logic as X (but the comments aren't repeated)
       #if ENABLED(INPUT_SHAPING_Y)
         if (shaping_y.enabled) {
           const int64_t steps = current_block->direction_bits.y ? int64_t(current_block->steps.y) : -int64_t(current_block->steps.y);
@@ -2727,12 +2743,21 @@ hal_timer_t Stepper::block_phase_isr() {
         }
       #endif
 
+      #if ENABLED(INPUT_SHAPING_Z)
+        if (shaping_z.enabled) {
+          const int64_t steps = current_block->direction_bits.z ? int64_t(current_block->steps.z) : -int64_t(current_block->steps.z);
+          shaping_z.last_block_end_pos += steps;
+          shaping_z.forward = current_block->direction_bits.z;
+          if (!ShapingQueue::empty_z()) current_block->direction_bits.z = last_direction_bits.z;
+        }
+      #endif
+
       // No step events completed so far
       step_events_completed = 0;
 
       // Compute the acceleration and deceleration points
-      accelerate_until = current_block->accelerate_until << oversampling_factor;
-      decelerate_after = current_block->decelerate_after << oversampling_factor;
+      accelerate_before = current_block->accelerate_before << oversampling_factor;
+      decelerate_start = current_block->decelerate_start << oversampling_factor;
 
       TERN_(MIXING_EXTRUDER, mixer.stepper_setup(current_block->b_color));
 
@@ -2818,7 +2843,8 @@ hal_timer_t Stepper::block_phase_isr() {
 
       // Calculate the initial timer interval
       interval = calc_multistep_timer_interval(current_block->initial_rate << oversampling_factor);
-      acceleration_time += interval;
+      // Initialize ac/deceleration time as if half the time passed.
+      acceleration_time = deceleration_time = interval / 2;
 
       #if ENABLED(NONLINEAR_EXTRUSION)
         calc_nonlinear_e(current_block->initial_rate << oversampling_factor);
@@ -3228,12 +3254,14 @@ void Stepper::init() {
     hal.isr_off();
     TERN_(INPUT_SHAPING_X, if (axis == X_AXIS) { shaping_x.factor2 = factor2; shaping_x.factor1 = 128 - factor2; shaping_x.zeta = zeta; })
     TERN_(INPUT_SHAPING_Y, if (axis == Y_AXIS) { shaping_y.factor2 = factor2; shaping_y.factor1 = 128 - factor2; shaping_y.zeta = zeta; })
+    TERN_(INPUT_SHAPING_Z, if (axis == Z_AXIS) { shaping_z.factor2 = factor2; shaping_z.factor1 = 128 - factor2; shaping_z.zeta = zeta; })
     if (was_on) hal.isr_on();
   }
 
   float Stepper::get_shaping_damping_ratio(const AxisEnum axis) {
     TERN_(INPUT_SHAPING_X, if (axis == X_AXIS) return shaping_x.zeta);
     TERN_(INPUT_SHAPING_Y, if (axis == Y_AXIS) return shaping_y.zeta);
+    TERN_(INPUT_SHAPING_Z, if (axis == Z_AXIS) return shaping_z.zeta);
     return -1;
   }
 
@@ -3245,24 +3273,18 @@ void Stepper::init() {
     hal.isr_off();
 
     const shaping_time_t delay = freq ? float(uint32_t(STEPPER_TIMER_RATE) / 2) / freq : shaping_time_t(-1);
-    #if ENABLED(INPUT_SHAPING_X)
-      if (axis == X_AXIS) {
-        ShapingQueue::set_delay(X_AXIS, delay);
-        shaping_x.frequency = freq;
-        shaping_x.enabled = !!freq;
-        shaping_x.delta_error = 0;
-        shaping_x.last_block_end_pos = count_position.x;
+    #define SHAPING_SET_FREQ_FOR_AXIS(AXISN, AXISL)                                 \
+      if (axis == AXISN) {                                                          \
+        ShapingQueue::set_delay(AXISN, delay);                                      \
+        shaping_##AXISL.frequency = freq;                                           \
+        shaping_##AXISL.enabled = !!freq;                                           \
+        shaping_##AXISL.delta_error = 0;                                            \
+        shaping_##AXISL.last_block_end_pos = count_position.AXISL;                  \
       }
-    #endif
-    #if ENABLED(INPUT_SHAPING_Y)
-      if (axis == Y_AXIS) {
-        ShapingQueue::set_delay(Y_AXIS, delay);
-        shaping_y.frequency = freq;
-        shaping_y.enabled = !!freq;
-        shaping_y.delta_error = 0;
-        shaping_y.last_block_end_pos = count_position.y;
-      }
-    #endif
+
+    TERN_(INPUT_SHAPING_X, SHAPING_SET_FREQ_FOR_AXIS(X_AXIS, x))
+    TERN_(INPUT_SHAPING_Y, SHAPING_SET_FREQ_FOR_AXIS(Y_AXIS, y))
+    TERN_(INPUT_SHAPING_Z, SHAPING_SET_FREQ_FOR_AXIS(Z_AXIS, z))
 
     if (was_on) hal.isr_on();
   }
@@ -3270,6 +3292,7 @@ void Stepper::init() {
   float Stepper::get_shaping_frequency(const AxisEnum axis) {
     TERN_(INPUT_SHAPING_X, if (axis == X_AXIS) return shaping_x.frequency);
     TERN_(INPUT_SHAPING_Y, if (axis == Y_AXIS) return shaping_y.frequency);
+    TERN_(INPUT_SHAPING_Z, if (axis == Z_AXIS) return shaping_z.frequency);
     return -1;
   }
 
@@ -3290,6 +3313,9 @@ void Stepper::_set_position(const abce_long_t &spos) {
   #endif
   #if ENABLED(INPUT_SHAPING_Y)
     const int32_t y_shaping_delta = count_position.y - shaping_y.last_block_end_pos;
+  #endif
+  #if ENABLED(INPUT_SHAPING_Z)
+    const int32_t z_shaping_delta = count_position.z - shaping_z.last_block_end_pos;
   #endif
 
   #if ANY(IS_CORE, MARKFORGED_XY, MARKFORGED_YX)
@@ -3329,6 +3355,12 @@ void Stepper::_set_position(const abce_long_t &spos) {
     if (shaping_y.enabled) {
       count_position.y += y_shaping_delta;
       shaping_y.last_block_end_pos = spos.y;
+    }
+  #endif
+  #if ENABLED(INPUT_SHAPING_Z)
+    if (shaping_z.enabled) {
+      count_position.z += z_shaping_delta;
+      shaping_z.last_block_end_pos = spos.z;
     }
   #endif
 }
@@ -3372,6 +3404,7 @@ void Stepper::set_axis_position(const AxisEnum a, const int32_t &v) {
   count_position[a] = v;
   TERN_(INPUT_SHAPING_X, if (a == X_AXIS) shaping_x.last_block_end_pos = v);
   TERN_(INPUT_SHAPING_Y, if (a == Y_AXIS) shaping_y.last_block_end_pos = v);
+  TERN_(INPUT_SHAPING_Z, if (a == Z_AXIS) shaping_z.last_block_end_pos = v);
 
   #ifdef __AVR__
     // Reenable Stepper ISR
@@ -3973,7 +4006,7 @@ void Stepper::report_positions() {
             #endif
             break;
           case 2:
-            #if HAS_MOTOR_CURRENT_PWM_E
+            #if PIN_EXISTS(MOTOR_CURRENT_PWM_E)
               _WRITE_CURRENT_PWM(E);
             #endif
             #if PIN_EXISTS(MOTOR_CURRENT_PWM_E0)
@@ -4036,7 +4069,7 @@ void Stepper::report_positions() {
         #if PIN_EXISTS(MOTOR_CURRENT_PWM_Z)
           INIT_CURRENT_PWM(Z);
         #endif
-        #if HAS_MOTOR_CURRENT_PWM_E
+        #if PIN_EXISTS(MOTOR_CURRENT_PWM_E)
           INIT_CURRENT_PWM(E);
         #endif
         #if PIN_EXISTS(MOTOR_CURRENT_PWM_E0)

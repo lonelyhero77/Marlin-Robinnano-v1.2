@@ -328,7 +328,7 @@ void report_current_position_projected() {
       can_reach = (
         R2 <= sq(L1 + L2) - inset
         #if MIDDLE_DEAD_ZONE_R > 0
-          && R2 >= sq(float(MIDDLE_DEAD_ZONE_R))
+          && R2 >= FLOAT_SQ(MIDDLE_DEAD_ZONE_R)
         #endif
       );
 
@@ -338,7 +338,7 @@ void report_current_position_projected() {
       can_reach = (
         R2 <= sq(L1 + L2) - inset
         #if MIDDLE_DEAD_ZONE_R > 0
-          && R2 >= sq(float(MIDDLE_DEAD_ZONE_R))
+          && R2 >= FLOAT_SQ(MIDDLE_DEAD_ZONE_R)
         #endif
       );
 
@@ -892,7 +892,7 @@ void restore_feedrate_and_scaling() {
     #elif ENABLED(DELTA)
 
       soft_endstop.min[axis] = base_min_pos(axis);
-      soft_endstop.max[axis] = (axis == Z_AXIS) ? DIFF_TERN(USE_PROBE_FOR_Z_HOMING, delta_height, probe.offset.z) : base_home_pos(axis);
+      soft_endstop.max[axis] = (axis == Z_AXIS) ? DIFF_TERN(HAS_BED_PROBE, delta_height, probe.offset.z) : base_max_pos(axis);
 
       switch (axis) {
         case X_AXIS:
@@ -1637,8 +1637,7 @@ void prepare_line_to_destination() {
     SERIAL_ECHO_START();
     msg.echoln();
 
-    msg.setf(GET_TEXT_F(MSG_HOME_FIRST), need);
-    ui.set_status(msg);
+    ui.status_printf(0, GET_TEXT_F(MSG_HOME_FIRST), need);
     return true;
   }
 
@@ -2186,7 +2185,7 @@ void prepare_line_to_destination() {
 
       // Move away from the endstop by the axis HOMING_BUMP_MM
       if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Move Away: ", -bump, "mm");
-      do_homing_move(axis, -bump, TERN(HOMING_Z_WITH_PROBE, (axis == Z_AXIS ? z_probe_fast_mm_s : 0), 0), false);
+      do_homing_move(axis, -bump, TERN0(HOMING_Z_WITH_PROBE, (axis == Z_AXIS ? z_probe_fast_mm_s : 0)), false);
 
       #if ENABLED(DETECT_BROKEN_ENDSTOP)
 
@@ -2467,7 +2466,7 @@ void set_axis_is_at_home(const AxisEnum axis) {
   #if ANY(MORGAN_SCARA, AXEL_TPARA)
     scara_set_axis_is_at_home(axis);
   #elif ENABLED(DELTA)
-    current_position[axis] = (axis == Z_AXIS) ? DIFF_TERN(USE_PROBE_FOR_Z_HOMING, delta_height, probe.offset.z) : base_home_pos(axis);
+    current_position[axis] = (axis == Z_AXIS) ? DIFF_TERN(HAS_BED_PROBE, delta_height, probe.offset.z) : base_home_pos(axis);
   #else
     current_position[axis] = SUM_TERN(HAS_HOME_OFFSET, base_home_pos(axis), home_offset[axis]);
   #endif
