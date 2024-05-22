@@ -99,9 +99,9 @@ namespace LanguageNarrow_sk {
   LSTR MSG_LEVEL_BED_DONE                 = _UxGT("Vyrovnanie hotové!");
   LSTR MSG_Z_FADE_HEIGHT                  = _UxGT("Výška rovnania");
   LSTR MSG_SET_HOME_OFFSETS               = _UxGT("Nastav. dom. ofsety");
-  LSTR MSG_HOME_OFFSET_X                  = _UxGT("X Ofset");
-  LSTR MSG_HOME_OFFSET_Y                  = _UxGT("Y Ofset");
-  LSTR MSG_HOME_OFFSET_Z                  = _UxGT("Z Ofset");
+  LSTR MSG_HOME_OFFSET_X                  = _UxGT("X Ofset"); // DWIN
+  LSTR MSG_HOME_OFFSET_Y                  = _UxGT("Y Ofset"); // DWIN
+  LSTR MSG_HOME_OFFSET_Z                  = _UxGT("Z Ofset"); // DWIN
   LSTR MSG_HOME_OFFSETS_APPLIED           = _UxGT("Ofsety nastavené");
   LSTR MSG_ERR_M428_TOO_FAR               = _UxGT("Chyba: Príliš ďaleko!");
   LSTR MSG_TRAMMING_WIZARD                = _UxGT("Spriev. vyrovn.");
@@ -338,6 +338,7 @@ namespace LanguageNarrow_sk {
   LSTR MSG_MAX                            = " " LCD_STR_THERMOMETER _UxGT(" Max");
   LSTR MSG_FACTOR                         = " " LCD_STR_THERMOMETER _UxGT(" Fakt");
   LSTR MSG_AUTOTEMP                       = _UxGT("Auto-teplota");
+  LSTR MSG_TIMEOUT                        = _UxGT("Čas vypršal");
   LSTR MSG_LCD_ON                         = _UxGT("Zap");
   LSTR MSG_LCD_OFF                        = _UxGT("Vyp");
   LSTR MSG_PID_AUTOTUNE                   = _UxGT("Kalibrácia PID");
@@ -347,7 +348,6 @@ namespace LanguageNarrow_sk {
   LSTR MSG_PID_AUTOTUNE_FAILED            = _UxGT("Kal. PID zlyhala!");
   LSTR MSG_BAD_HEATER_ID                  = _UxGT("Zlý extrudér");
   LSTR MSG_TEMP_TOO_HIGH                  = _UxGT("Príliš vysoká tepl.");
-  LSTR MSG_TIMEOUT                        = _UxGT("Čas vypršal");
   LSTR MSG_PID_BAD_HEATER_ID              = _UxGT("Auto-kal. zlyhala! Zlý extrúder.");
   LSTR MSG_PID_TEMP_TOO_HIGH              = _UxGT("Auto-kal. zlyhala! Príliš vysoká tepl.");
   LSTR MSG_PID_TIMEOUT                    = _UxGT("Auto-kal. zlyhala! Čas vypršal.");

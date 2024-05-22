@@ -22,7 +22,7 @@
 #pragma once
 
 //
-// Voxelab Aquila V1.0.1 and V1.0.2 (HC32F460) as found in the Voxelab Aquila X2
+// Voxelab Aquila V1.0.0/V1.0.1/V1.0.2/V1.0.3 (HC32F460) as found in the Voxelab Aquila X2 and C2
 //
 #include "env_validate.h"
 
@@ -45,10 +45,13 @@
 #endif
 
 //
-// Release PB4 (Y_ENABLE_PIN) from JTAG NRST role
+// Release JTAG pins but keep SWD enabled
+// - PA15 (JTDI / USART2 RX)
+// - PB3 (JTDO / E0_DIR)
+// - PB4 (NJTRST / E0_STEP)
 //
 //#define DISABLE_DEBUG
-//#define DISABLE_JTAG
+#define DISABLE_JTAG
 
 //
 // EEPROM
@@ -152,7 +155,22 @@
 #define EXP1_07_PIN                         PB12  // EN2
 #define EXP1_08_PIN                         PB15  // EN1
 
-#if ANY(HAS_DWIN_E3V2, IS_DWIN_MARLINUI)
+#if ENABLED(CR10_STOCKDISPLAY)                    // LCD used for C2
+
+  #ifndef HAS_PIN_27_BOARD
+    #define BEEPER_PIN               EXP1_01_PIN
+  #endif
+
+  #define BTN_ENC                    EXP1_02_PIN
+  #define BTN_EN1                    EXP1_03_PIN
+  #define BTN_EN2                    EXP1_05_PIN
+
+  #define LCD_PINS_RS                EXP1_07_PIN
+  #define LCD_PINS_EN                EXP1_08_PIN
+  #define LCD_PINS_D4                EXP1_06_PIN
+
+#elif ANY(HAS_DWIN_E3V2, IS_DWIN_MARLINUI)        // LCD used for X2
+
   /**
    * Display pinout (display side, so RX/TX are swapped)
    *

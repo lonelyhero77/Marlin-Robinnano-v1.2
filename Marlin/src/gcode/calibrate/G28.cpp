@@ -52,8 +52,6 @@
   #include "../../lcd/extui/ui_api.h"
 #elif ENABLED(DWIN_CREALITY_LCD)
   #include "../../lcd/e3v2/creality/dwin.h"
-#elif ENABLED(DWIN_LCD_PROUI)
-  #include "../../lcd/e3v2/proui/dwin.h"
 #endif
 
 #if ENABLED(LASER_FEATURE)
@@ -155,7 +153,7 @@
     planner.settings.max_acceleration_mm_per_s2[X_AXIS] = 100;
     planner.settings.max_acceleration_mm_per_s2[Y_AXIS] = 100;
     TERN_(DELTA, planner.settings.max_acceleration_mm_per_s2[Z_AXIS] = 100);
-    #if HAS_CLASSIC_JERK
+    #if ENABLED(CLASSIC_JERK)
       motion_state.jerk_state = planner.max_jerk;
       planner.max_jerk.set(0, 0 OPTARG(DELTA, 0));
     #endif
@@ -167,7 +165,7 @@
     planner.settings.max_acceleration_mm_per_s2[X_AXIS] = motion_state.acceleration.x;
     planner.settings.max_acceleration_mm_per_s2[Y_AXIS] = motion_state.acceleration.y;
     TERN_(DELTA, planner.settings.max_acceleration_mm_per_s2[Z_AXIS] = motion_state.acceleration.z);
-    TERN_(HAS_CLASSIC_JERK, planner.max_jerk = motion_state.jerk_state);
+    TERN_(CLASSIC_JERK, planner.max_jerk = motion_state.jerk_state);
     planner.refresh_acceleration_rates();
   }
 
@@ -223,7 +221,7 @@ void GcodeSuite::G28() {
     set_and_report_grblstate(M_HOMING);
   #endif
 
-  TERN_(HAS_DWIN_E3V2_BASIC, dwinHomingStart());
+  TERN_(DWIN_CREALITY_LCD, dwinHomingStart());
   TERN_(EXTENSIBLE_UI, ExtUI::onHomingStart());
 
   planner.synchronize();          // Wait for planner moves to finish!
@@ -263,7 +261,7 @@ void GcodeSuite::G28() {
 
       #if ENABLED(DEBUG_LEVELING_FEATURE)
         auto debug_current = [](FSTR_P const s, const int16_t a, const int16_t b) {
-          if (DEBUGGING(LEVELING)) { DEBUG_ECHOF(s); DEBUG_ECHOLNPGM(" current: ", a, " -> ", b); }
+          if (DEBUGGING(LEVELING)) { DEBUG_ECHOLN(s, F(" current: "), a, F(" -> "), b); }
         };
       #else
         #define debug_current(...)
@@ -639,8 +637,8 @@ void GcodeSuite::G28() {
     #endif
 
     #ifdef XY_AFTER_HOMING
-      constexpr xy_pos_t xy_after XY_AFTER_HOMING;
-      do_blocking_move_to(xy_after);
+      if (!axes_should_home(_BV(X_AXIS) | _BV(Y_AXIS)))
+        do_blocking_move_to(xy_pos_t(XY_AFTER_HOMING));
     #endif
 
     restore_feedrate_and_scaling();
@@ -652,7 +650,7 @@ void GcodeSuite::G28() {
 
   ui.refresh();
 
-  TERN_(HAS_DWIN_E3V2_BASIC, dwinHomingDone());
+  TERN_(DWIN_CREALITY_LCD, dwinHomingDone());
   TERN_(EXTENSIBLE_UI, ExtUI::onHomingDone());
 
   report_current_position();

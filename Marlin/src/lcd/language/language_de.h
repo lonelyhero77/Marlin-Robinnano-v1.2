@@ -85,9 +85,9 @@ namespace LanguageNarrow_de {
   LSTR MSG_LEVEL_BED_DONE                 = _UxGT("Nivellieren fertig!");
   LSTR MSG_Z_FADE_HEIGHT                  = _UxGT("Ausblendhöhe");
   LSTR MSG_SET_HOME_OFFSETS               = _UxGT("Setze Homeversatz");
-  LSTR MSG_HOME_OFFSET_X                  = _UxGT("Homeversatz X");
-  LSTR MSG_HOME_OFFSET_Y                  = _UxGT("Homeversatz Y");
-  LSTR MSG_HOME_OFFSET_Z                  = _UxGT("Homeversatz Z");
+  LSTR MSG_HOME_OFFSET_X                  = _UxGT("Homeversatz X"); // DWIN
+  LSTR MSG_HOME_OFFSET_Y                  = _UxGT("Homeversatz Y"); // DWIN
+  LSTR MSG_HOME_OFFSET_Z                  = _UxGT("Homeversatz Z"); // DWIN
   LSTR MSG_HOME_OFFSETS_APPLIED           = _UxGT("Homeversatz aktiv");
   LSTR MSG_TRAMMING_WIZARD                = _UxGT("Tramming Assistent");
   LSTR MSG_SELECT_ORIGIN                  = _UxGT("Wählen Sie Ursprung");
@@ -328,7 +328,6 @@ namespace LanguageNarrow_de {
   LSTR MSG_PID_AUTOTUNE_FAILED            = _UxGT("PID Autotune fehlge.!");
   LSTR MSG_BAD_HEATER_ID                  = _UxGT("ungültiger Extruder.");
   LSTR MSG_TEMP_TOO_HIGH                  = _UxGT("Temperatur zu hoch.");
-  LSTR MSG_TIMEOUT                        = _UxGT("Timeout");
   LSTR MSG_PID_BAD_HEATER_ID              = _UxGT("Autotune fehlge.! Ungültiger Extruder");
   LSTR MSG_PID_TEMP_TOO_HIGH              = _UxGT("Autotune fehlge.! Temperatur zu hoch.");
   LSTR MSG_PID_TIMEOUT                    = _UxGT("Autotune fehlge.! Timeout.");

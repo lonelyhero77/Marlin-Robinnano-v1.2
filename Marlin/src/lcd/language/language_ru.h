@@ -73,9 +73,6 @@ namespace LanguageNarrow_ru {
   LSTR MSG_Z_FADE_HEIGHT                    = _UxGT("Лимит выранивания");
 
   LSTR MSG_SET_HOME_OFFSETS                 = _UxGT("Установ.смещ.дома");
-  LSTR MSG_HOME_OFFSET_X                    = _UxGT("Смещ. дома X");
-  LSTR MSG_HOME_OFFSET_Y                    = _UxGT("Смещ. дома Y");
-  LSTR MSG_HOME_OFFSET_Z                    = _UxGT("Смещ. дома Z");
 
   LSTR MSG_HOME_OFFSETS_APPLIED             = _UxGT("Смещения применены");
   LSTR MSG_SELECT_ORIGIN                    = _UxGT("Выберите ноль");
@@ -294,6 +291,7 @@ namespace LanguageNarrow_ru {
   LSTR MSG_MAX                              = " " LCD_STR_THERMOMETER ", " LCD_STR_DEGREE _UxGT("С макс");
   LSTR MSG_FACTOR                           = " " LCD_STR_THERMOMETER _UxGT(" Фактор");
   LSTR MSG_AUTOTEMP                         = _UxGT("Автотемпература");
+  LSTR MSG_TIMEOUT                          = _UxGT("Таймаут.");
   LSTR MSG_LCD_ON                           = _UxGT("Вкл");
   LSTR MSG_LCD_OFF                          = _UxGT("Выкл");
 
@@ -707,7 +705,6 @@ namespace LanguageNarrow_ru {
   LSTR MSG_PID_AUTOTUNE_FAILED              = _UxGT("Автонастройка PID не удалась!");
   LSTR MSG_BAD_HEATER_ID                    = _UxGT("Неверный экструдер.");
   LSTR MSG_TEMP_TOO_HIGH                    = _UxGT("Слишком высокая температура.");
-  LSTR MSG_TIMEOUT                          = _UxGT("Таймаут.");
   LSTR MSG_MPC_MEASURING_AMBIENT            = _UxGT("Тест потери тепла");
   LSTR MSG_MPC_HEATING_PAST_200             = _UxGT("Нагрев выше >200C");
   LSTR MSG_MPC_COOLING_TO_AMBIENT           = _UxGT("Охлаждение до окружающей");
@@ -832,9 +829,9 @@ namespace LanguageWide_ru {
     LSTR MSG_ADVANCED_SETTINGS              = _UxGT("Расширенные настройки");
     LSTR MSG_KILL_SUBCALL_OVERFLOW          = _UxGT("Переполнение вызова");
     LSTR MSG_SET_HOME_OFFSETS               = _UxGT("Установ. смещения дома");
-    LSTR MSG_HOME_OFFSET_X                  = _UxGT("Смещение дома X");
-    LSTR MSG_HOME_OFFSET_Y                  = _UxGT("Смещение дома Y");
-    LSTR MSG_HOME_OFFSET_Z                  = _UxGT("Смещение дома Z");
+    LSTR MSG_HOME_OFFSET_X                  = _UxGT("Смещение дома X"); // DWIN
+    LSTR MSG_HOME_OFFSET_Y                  = _UxGT("Смещение дома Y"); // DWIN
+    LSTR MSG_HOME_OFFSET_Z                  = _UxGT("Смещение дома Z"); // DWIN
     LSTR MSG_LAST_VALUE_SP                  = _UxGT("Последнее значение ");
     LSTR MSG_SPINDLE_MENU                   = _UxGT("Управлен.шпинделем");
     LSTR MSG_LASER_TOGGLE                   = _UxGT("Переключить лазер");
